@@ -2,9 +2,14 @@ import app from "./app";
 import { config } from "./config/config";
 import { checkDb, pool } from "./config/db";
 import { logger } from "./utils/logger";
+import { connectProducer, disconnectProducer } from "./kafka/producer";
+
 
 async function main() {
   await checkDb();
+
+  await connectProducer();
+
   const server = app.listen(config.port, () =>
     logger.info(`Server running on port ${config.port}`)
   );
@@ -12,6 +17,7 @@ async function main() {
   const shutdown = () => {
     logger.info("Shutting down...");
     server.close(async () => {
+      await disconnectProducer();
       await pool.end();
       process.exit(0);
     });

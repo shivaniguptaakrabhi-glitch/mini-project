@@ -4,6 +4,7 @@ import { pool } from "../config/db";
 import { signToken } from "../midleware/auth";
 import { AppError } from "../utils/error";
 import { logger } from "../utils/logger";
+import { publishUserSignup } from "../kafka/producer";
 
 const signup = async (req:Request, res: Response, next: NextFunction) => {
   try {
@@ -17,6 +18,9 @@ const signup = async (req:Request, res: Response, next: NextFunction) => {
       [username, email, hash]
     );
     const user = results.rows[0];
+    
+    await publishUserSignup(user);
+    
     logger.info({ userId: user.id }, "User signed up");
     res.status(201).json({
       user,
@@ -70,7 +74,7 @@ const getuser = async (req: Request, res: Response, next: NextFunction) => {
     const results = await pool.query(
       `SELECT u.id, u.username, u.role,
          (SELECT COUNT(*)::int FROM follows WHERE following_id = u.id) AS followers_count,
-         (SELECT COUNT(*)::int FROM follows WHERE follower_id  = u.id) AS following_count,
+         (SELECT COUNT(*)::int FROM follows WHERE follower_id  = u.id) AS following_count
        FROM users u WHERE u.id = $1`,
       [Number(req.params.id)]
     );
