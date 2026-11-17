@@ -53,7 +53,7 @@ jobs:
       PORT: 5000
       NODE_ENV: test
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/project
-      JWT_SECRET: test-secret
+      JWT_SECRET: 23dfa@3467887653212dghdsn5347h
       JWT_EXPIRES_IN: 1d
       LOG_LEVEL: debug
       KAFKAJS_NO_PARTITIONER_WARNING: 1
