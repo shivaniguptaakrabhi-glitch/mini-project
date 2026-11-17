@@ -164,10 +164,21 @@ const createPost = async (req: Request, res: Response, next: NextFunction) => {
 
 const getPost = async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const results= await pool.query(
-      `SELECT p.id, p.title, p.body,p.user_id,p.created_at, u.username FROM posts p JOIN users u ON u.id = p.user_id WHERE p.id = $1`,
-      [Number(req.params.id)]
-    );
+   const results = await pool.query(
+  `SELECT
+      p.id,
+      p.title,
+      p.body,
+      p.status,
+      p.user_id,
+      p.created_at,
+      u.username
+   FROM posts p
+   JOIN users u
+     ON p.user_id = u.id
+   WHERE p.id = $1`,
+  [Number(req.params.id)]
+  );
     const post = results.rows[0];
     // drafts are visible only to their owner
     if (!post || (post.status === "draft" && post.user_id !== req.user!.id)) {

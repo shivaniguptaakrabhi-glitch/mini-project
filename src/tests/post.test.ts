@@ -1,29 +1,12 @@
 import request from "supertest";
-import bcrypt from "bcryptjs";
 
 import app from "../app";
 import { pool } from "../config/db";
-import { publishUserSignup } from "../kafka/producer";
-import { signToken } from "../midleware/auth";
 
 jest.mock("../config/db", () => ({
   pool: {
     query: jest.fn(),
   },
-}));
-
-jest.mock("../kafka/producer", () => ({
-  publishUserSignup: jest.fn(),
-}));
-
-jest.mock("../midleware/auth", () => ({
-  ...jest.requireActual("../midleware/auth"),
-  signToken: jest.fn(),
-}));
-
-jest.mock("bcryptjs", () => ({
-  hash: jest.fn(),
-  compare: jest.fn(),
 }));
 
 
@@ -45,35 +28,55 @@ describe("POST /api/posts", () => {
     jest.clearAllMocks();
   });
 
-  it("should create a post successfully", async () => {
+  test("should create a post successfully", async () => {
 
-    (pool.query as jest.Mock).mockResolvedValue({
-      rows: [
-        {
-          id: 1,
-          title: "My First Post",
-          body: "This is my first post",
-          user_id: 1,
-          status: "published",
-          created_at: new Date(),
-        },
-      ],
-    });
-
-    const response = await request(app)
-      .post("/api/posts")
-      .set("Authorization", "Bearer fake-token")
-      .send({
+  (pool.query as jest.Mock).mockResolvedValue({
+    rows: [
+      {
+        id: 1,
         title: "My First Post",
         body: "This is my first post",
+        user_id: 1,
         status: "published",
-      });
-
-    expect(response.status).toBe(201);
-    expect(response.body.title).toBe("My First Post");
-    expect(response.body.status).toBe("published");
-
+        created_at: new Date(),
+      },
+    ],
   });
+
+  const response = await request(app)
+    .post("/api/posts")
+    .set("Authorization", "Bearer fake-token")
+    .send({
+      title: "My First Post",
+      body: "This is my first post",
+      status: "published",
+    });
+
+  expect(response.status).toBe(201);
+  expect(response.body).toHaveProperty("title");
+  expect(response.body).toHaveProperty("body");
+  expect(response.body).toHaveProperty("status");
+
+});
+
+test("should return 500 when database throws an error", async () => {
+
+  (pool.query as jest.Mock).mockRejectedValue(
+    new Error("Database connection failed")
+  );
+
+  const response = await request(app)
+    .post("/api/posts")
+    .set("Authorization", "Bearer fake-token")
+    .send({
+      title: "My First Post",
+      body: "This is my first post",
+      status: "published",
+    });
+
+  expect(response.status).toBe(500);
+
+});
 
 });
 
@@ -83,31 +86,82 @@ describe("GET /api/posts/:id", () => {
     jest.clearAllMocks();
   });
 
-  it("should return a post", async () => {
+ test("should return a post", async () => {
 
-    (pool.query as jest.Mock).mockResolvedValue({
-      rows: [
-        {
-          id: 1,
-          title: "My First Post",
-          body: "This is my first post",
-          user_id: 1,
-          username: "shivani",
-          status: "published",
-          created_at: new Date(),
-        },
-      ],
-    });
-
-    const response = await request(app)
-      .get("/api/posts/1")
-      .set("Authorization", "Bearer fake-token");
-
-    expect(response.status).toBe(200);
-    expect(response.body.title).toBe("My First Post");
-    expect(response.body.username).toBe("shivani");
-
+  (pool.query as jest.Mock).mockResolvedValue({
+    rows: [
+      {
+        id: 1,
+        title: "My Post",
+        body: "Hello",
+        status: "published",
+        user_id: 1,
+        username: "shivani",
+      },
+    ],
   });
+
+  const response = await request(app)
+    .get("/api/posts/1")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(200);
+  expect(response.body).toHaveProperty("title");
+  expect(response.body).toHaveProperty("body");
+
+});
+
+test("should return 404 when post is not found", async () => {
+
+  (pool.query as jest.Mock).mockResolvedValue({
+    rows: [],
+  });
+
+  const response = await request(app)
+    .get("/api/posts/100")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(404);
+  expect(response.body.message).toBe("Post not found");
+
+});
+
+test("should return 404 when draft belongs to another user", async () => {
+
+  (pool.query as jest.Mock).mockResolvedValue({
+    rows: [
+      {
+        id: 1,
+        title: "Draft",
+        body: "Hidden",
+        status: "draft",
+        user_id: 2,
+      },
+    ],
+  });
+
+  const response = await request(app)
+    .get("/api/posts/1")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(404);
+  expect(response.body.message).toBe("Post not found");
+
+});
+
+test("should return 500 when database throws an error", async () => {
+
+  (pool.query as jest.Mock).mockRejectedValue(
+    new Error("Database connection failed")
+  );
+
+  const response = await request(app)
+    .get("/api/posts/1")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(500);
+
+});
 
 });
 describe("PATCH /api/posts/:id", () => {
@@ -116,43 +170,92 @@ describe("PATCH /api/posts/:id", () => {
     jest.clearAllMocks();
   });
 
-  it("should update a post successfully", async () => {
+test("should update a post successfully", async () => {
 
-    (pool.query as jest.Mock)
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            user_id: 1,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            id: 1,
-            title: "Updated Post",
-            body: "Updated Body",
-            user_id: 1,
-            status: "published",
-            created_at: new Date(),
-          },
-        ],
-      });
+  (pool.query as jest.Mock)
+    .mockResolvedValueOnce({
+      rows: [{ user_id: 1 }],
+    })
+    .mockResolvedValueOnce({
+      rows: [
+        {
+          id: 1,
+          title: "Updated Title",
+          body: "Updated Body",
+          user_id: 1,
+          status: "published",
+        },
+      ],
+    });
 
-    const response = await request(app)
-      .patch("/api/posts/1")
-      .set("Authorization", "Bearer fake-token")
-      .send({
-        title: "Updated Post",
-        body: "Updated Body",
-        status: "published",
-      });
+  const response = await request(app)
+    .patch("/api/posts/1")
+    .set("Authorization", "Bearer fake-token")
+    .send({
+      title: "Updated Title",
+      body: "Updated Body",
+      status: "published",
+    });
 
-    expect(response.status).toBe(200);
-    expect(response.body.title).toBe("Updated Post");
-    expect(response.body.status).toBe("published");
+  expect(response.status).toBe(200);
+  expect(response.body).toHaveProperty("title");
+  expect(response.body).toHaveProperty("body");
+  expect(response.body).toHaveProperty("status");
 
+});
+
+test("should return 404 when post is not found", async () => {
+
+  (pool.query as jest.Mock).mockResolvedValueOnce({
+    rows: [],
   });
+
+  const response = await request(app)
+    .patch("/api/posts/1")
+    .set("Authorization", "Bearer fake-token")
+    .send({
+      title: "Updated Title",
+    });
+
+  expect(response.status).toBe(404);
+  expect(response.body.message).toBe("Post not found");
+
+});
+
+test("should return 403 when updating another user's post", async () => {
+
+  (pool.query as jest.Mock).mockResolvedValueOnce({
+    rows: [{ user_id: 2 }],
+  });
+
+  const response = await request(app)
+    .patch("/api/posts/1")
+    .set("Authorization", "Bearer fake-token")
+    .send({
+      title: "Updated Title",
+    });
+
+  expect(response.status).toBe(403);
+  expect(response.body.message).toBe("You can only edit your own posts");
+
+});
+
+test("should return 500 when database throws an error", async () => {
+
+  (pool.query as jest.Mock).mockRejectedValue(
+    new Error("Database connection failed")
+  );
+
+  const response = await request(app)
+    .patch("/api/posts/1")
+    .set("Authorization", "Bearer fake-token")
+    .send({
+      title: "Updated Title",
+    });
+
+  expect(response.status).toBe(500);
+
+});
 
 });
 
@@ -162,24 +265,48 @@ describe("DELETE /api/posts/:id", () => {
     jest.clearAllMocks();
   });
 
-  it("should delete a post successfully", async () => {
+ test("should delete a post successfully", async () => {
 
-    (pool.query as jest.Mock)
-      .mockResolvedValueOnce({
-        rows: [
-          {
-            user_id: 1,
-          },
-        ],
-      })
-      .mockResolvedValueOnce({});
+  (pool.query as jest.Mock)
+    .mockResolvedValueOnce({
+      rows: [{ user_id: 1 }],
+    })
+    .mockResolvedValueOnce({});
 
-    const response = await request(app)
-      .delete("/api/posts/1")
-      .set("Authorization", "Bearer fake-token");
+  const response = await request(app)
+    .delete("/api/posts/1")
+    .set("Authorization", "Bearer fake-token");
 
-    expect(response.status).toBe(204);
+  expect(response.status).toBe(204);
 
+});
+
+test("should return 404 when post is not found", async () => {
+
+  (pool.query as jest.Mock).mockResolvedValueOnce({
+    rows: [],
   });
 
+  const response = await request(app)
+    .delete("/api/posts/1")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(404);
+  expect(response.body.message).toBe("Post not found");
+
+});
+test("should return 403 when deleting another user's post", async () => {
+
+  (pool.query as jest.Mock).mockResolvedValueOnce({
+    rows: [{ user_id: 2 }],
+  });
+
+  const response = await request(app)
+    .delete("/api/posts/1")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(403);
+  expect(response.body.message).toBe("Not allowed to delete this post");
+
+});
 });

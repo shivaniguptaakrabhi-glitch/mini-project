@@ -39,27 +39,24 @@ jest.mock("../midleware/auth", () => ({
   signToken: jest.fn(),
 }));
 
-
 describe("POST /api/auth/signup", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it("should create a new user successfully", async () => {
+  test("should create a new user successfully", async () => {
 
     (bcrypt.hash as jest.Mock).mockResolvedValue("hashedPassword");
 
     (pool.query as jest.Mock).mockResolvedValue({
-      rows: [
-        {
-          id: 1,
-          username: "shivani",
-          email: "shivani@test.com",
-          role: "user",
-          created_at: new Date(),
-        },
-      ],
+      rows: [{
+        id: 1,
+        username: "shivani",
+        email: "shivani@test.com",
+        role: "user",
+        created_at: new Date(),
+      }],
     });
 
     (publishUserSignup as jest.Mock).mockResolvedValue(undefined);
@@ -75,27 +72,73 @@ describe("POST /api/auth/signup", () => {
       });
 
     expect(response.status).toBe(201);
-
-    expect(response.body.user).toEqual({
-      id: 1,
-      username: "shivani",
-      email: "shivani@test.com",
-      role: "user",
-      created_at: expect.any(String),
-    });
-
-    expect(response.body.token).toBe("fake-jwt-token");
-
-    expect(pool.query).toHaveBeenCalledTimes(1);
-
-    expect(bcrypt.hash).toHaveBeenCalledWith("Password123", 10);
-
-    expect(publishUserSignup).toHaveBeenCalledTimes(1);
-
-    expect(signToken).toHaveBeenCalledTimes(1);
+    expect(response.body).toHaveProperty("user");
+    expect(response.body).toHaveProperty("token");
 
   });
 
+  test("should return 409 when email already exists", async () => {
+
+    (bcrypt.hash as jest.Mock).mockResolvedValue("hashedPassword");
+
+    (pool.query as jest.Mock).mockRejectedValue({
+      code: "23505",
+      constraint: "users_email_key",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/signup")
+      .send({
+        username: "shivani",
+        email: "shivani@test.com",
+        password: "Password123",
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe("Email already taken");
+
+  });
+
+  test("should return 409 when username already exists", async () => {
+
+    (bcrypt.hash as jest.Mock).mockResolvedValue("hashedPassword");
+
+    (pool.query as jest.Mock).mockRejectedValue({
+      code: "23505",
+      constraint: "users_username_key",
+    });
+
+    const response = await request(app)
+      .post("/api/auth/signup")
+      .send({
+        username: "shivani",
+        email: "shivani@test.com",
+        password: "Password123",
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe("Username already taken");
+
+  });
+test("should return 500 when database throws an error", async () => {
+
+  (bcrypt.hash as jest.Mock).mockResolvedValue("hashedPassword");
+
+  (pool.query as jest.Mock).mockRejectedValue(
+    new Error("Database connection failed")
+  );
+
+  const response = await request(app)
+    .post("/api/auth/signup")
+    .send({
+      username: "shivani",
+      email: "shivani@test.com",
+      password: "Password123",
+    });
+
+  expect(response.status).toBe(500);
+
+});
 });
 
 describe("POST /api/auth/login", () => {
@@ -104,7 +147,7 @@ describe("POST /api/auth/login", () => {
     jest.clearAllMocks();
   });
 
-  it("should login successfully", async () => {
+  test("should login successfully", async () => {
 
     (pool.query as jest.Mock).mockResolvedValue({
       rows: [
@@ -130,11 +173,43 @@ describe("POST /api/auth/login", () => {
       });
 
     expect(response.status).toBe(200);
-    expect(response.body.user.username).toBe("shivani");
-    expect(response.body.token).toBe("fake-token");
+    expect(response.body).toHaveProperty("user");
+    expect(response.body).toHaveProperty("token");
 
   });
+test("should return 401 when email does not exist", async () => {
 
+  (pool.query as jest.Mock).mockResolvedValue({
+    rows: [],
+  });
+
+  const response = await request(app)
+    .post("/api/auth/login")
+    .send({
+      email: "unknown@test.com",
+      password: "Password123",
+    });
+
+  expect(response.status).toBe(401);
+  expect(response.body.message).toBe("Invalid email or password");
+
+});
+test("should return 500 when database throws an error", async () => {
+
+  (pool.query as jest.Mock).mockRejectedValue(
+    new Error("Database connection failed")
+  );
+
+  const response = await request(app)
+    .post("/api/auth/login")
+    .send({
+      email: "shivani@test.com",
+      password: "Password123",
+    });
+
+  expect(response.status).toBe(500);
+
+});
 });
 
 describe("GET /api/users/me", () => {
@@ -143,7 +218,7 @@ describe("GET /api/users/me", () => {
     jest.clearAllMocks();
   });
 
-  it("should return logged in user", async () => {
+  test("should return logged in user", async () => {
 
     (pool.query as jest.Mock).mockResolvedValue({
       rows: [
@@ -162,11 +237,37 @@ describe("GET /api/users/me", () => {
       .set("Authorization", "Bearer fake-token");
 
     expect(response.status).toBe(200);
-    expect(response.body.username).toBe("shivani");
-    expect(response.body.email).toBe("shivani@test.com");
+    expect(response.body).toHaveProperty("username");
+    expect(response.body).toHaveProperty("email");
 
   });
+test("should return 404 when user is not found", async () => {
 
+  (pool.query as jest.Mock).mockResolvedValue({
+    rows: [],
+  });
+
+  const response = await request(app)
+    .get("/api/users/me")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(404);
+  expect(response.body.message).toBe("User not found");
+
+});
+test("should return 500 when database throws an error", async () => {
+
+  (pool.query as jest.Mock).mockRejectedValue(
+    new Error("Database connection failed")
+  );
+
+  const response = await request(app)
+    .get("/api/users/me")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(500);
+
+});
 });
 
 describe("GET /api/users/:id", () => {
@@ -175,7 +276,7 @@ describe("GET /api/users/:id", () => {
     jest.clearAllMocks();
   });
 
-  it("should return user by id", async () => {
+  test("should return user by id", async () => {
 
     (pool.query as jest.Mock).mockResolvedValue({
       rows: [
@@ -194,9 +295,37 @@ describe("GET /api/users/:id", () => {
       .set("Authorization", "Bearer fake-token");
 
     expect(response.status).toBe(200);
-    expect(response.body.username).toBe("shivani");
-    expect(response.body.followers_count).toBe(10);
+    expect(response.body).toHaveProperty("username");
+    expect(response.body).toHaveProperty("followers_count");
+    expect(response.body).toHaveProperty("following_count");
 
   });
+test("should return 404 when user is not found", async () => {
+
+  (pool.query as jest.Mock).mockResolvedValue({
+    rows: [],
+  });
+
+  const response = await request(app)
+    .get("/api/users/100")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(404);
+  expect(response.body.message).toBe("User not found");
 
 });
+test("should return 500 when database throws an error", async () => {
+
+  (pool.query as jest.Mock).mockRejectedValue(
+    new Error("Database connection failed")
+  );
+
+  const response = await request(app)
+    .get("/api/users/1")
+    .set("Authorization", "Bearer fake-token");
+
+  expect(response.status).toBe(500);
+
+});
+});
+

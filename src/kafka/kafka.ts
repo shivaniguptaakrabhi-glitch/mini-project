@@ -2,5 +2,5 @@ import { Kafka } from "kafkajs";
 
 export const kafka = new Kafka({
   clientId: "mini-project",
-  brokers: ["localhost:9092"],
+  brokers: [process.env.KAFKA_BROKER || "localhost:9092"],
 });
