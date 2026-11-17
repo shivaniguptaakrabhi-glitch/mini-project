@@ -89,7 +89,7 @@ jobs:
             -h localhost \
             -U postgres \
             -d project \
-            -f database/schema.sql
+            -f src/database/schema.sql
 
       - name: Build Project
         run: npm run build
