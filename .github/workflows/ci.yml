@@ -13,10 +13,8 @@ permissions:
   contents: read
   packages: write
 
-
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     services:
@@ -54,6 +52,7 @@ jobs:
           KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
           KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
           CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+
     env:
       PORT: 5000
       NODE_ENV: test
@@ -62,8 +61,8 @@ jobs:
       JWT_EXPIRES_IN: 1d
       LOG_LEVEL: debug
       KAFKAJS_NO_PARTITIONER_WARNING: 1
-    steps:
 
+    steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
@@ -79,15 +78,17 @@ jobs:
 
       - name: Install PostgreSQL Client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
-      
+
       - name: Wait for PostgreSQL
         run: |
           until pg_isready -h localhost -p 5432 -U postgres; do
             echo "Waiting for PostgreSQL..."
             sleep 2
           done
+
       - name: Wait for Kafka
         run: sleep 20
+
       - name: Create Database Schema
         run: |
           PGPASSWORD=postgres psql \
@@ -99,28 +100,30 @@ jobs:
       - name: Build Project
         run: npm run build
 
-      - name: Run Tests with Coverage
+      - name: Run Tests
         run: npm run test:coverage
 
-
-      - name: Login to GitHub Container Registry
+      # Login to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Login to Docker Hub
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.24shivanigupta }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-          
+      # Buildx
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build and Push Image
+      # Build once and push to both registries
+      - name: Build and Push Docker Images
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -128,13 +131,25 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/mini-project:latest
             ghcr.io/${{ github.repository_owner }}/mini-project:${{ github.sha }}
-            24shivanigupta/mini-project:latest
-            24shivanigupta/mini-project:${{ github.sha }}
-      
-      - name: Pull from GHCR
+            YOUR_DOCKERHUB_USERNAME/mini-project:latest
+            YOUR_DOCKERHUB_USERNAME/mini-project:${{ github.sha }}
+
+      - name: Show Image Tags
+        run: |
+          echo "GHCR:"
+          echo "ghcr.io/${{ github.repository_owner }}/mini-project:latest"
+          echo "ghcr.io/${{ github.repository_owner }}/mini-project:${{ github.sha }}"
+          echo ""
+          echo "Docker Hub:"
+          echo "24shivanigupta/mini-project:latest"
+          echo "24shivanigupta/mini-project:${{ github.sha }}"
+
+      - name: Verify GHCR Image
         run: |
           docker pull ghcr.io/${{ github.repository_owner }}/mini-project:latest
+          docker run --rm ghcr.io/${{ github.repository_owner }}/mini-project:latest npm --version
 
-      - name: Pull from Docker Hub
+      - name: Verify Docker Hub Image
         run: |
-          docker pull YOUR_DOCKERHUB_USERNAME/mini-project:latest
+          docker pull 24shivanigupta/mini-project:latest
+          docker run --rm 24shivanigupta/mini-project:latest npm --version
